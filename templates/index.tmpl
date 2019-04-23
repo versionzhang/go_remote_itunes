@@ -1,0 +1,481 @@
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">    
+    <!-- 引入样式 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vant@1.6/lib/index.css">
+
+    <title>	{{ .title }} </title>
+    <!-- 引入组件 -->
+    <script src="https://unpkg.com/jquery@3.3.1/dist/jquery.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vant@1.6/lib/vant.min.js"></script>
+
+    <style>
+        .content {
+            width: 90%;
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        p.slider {
+            margin: 0;
+            font-weight: 400;
+            font-size: 14px;
+            color: rgba(69, 90, 100, .6);
+            padding: 35px 15px 15px;
+        }
+
+        .slider .van-slider {
+            margin: 0 15px 30px;
+        }
+
+        .slider .custom-button {
+            width: 26px;
+            color: #fff;
+            font-size: 10px;
+            line-height: 18px;
+            text-align: center;
+            border-radius: 100px;
+            background-color: #f44;
+        }
+
+        .van-popup {
+            width: 60%;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+    </style>
+  </head>
+
+    <body>
+
+
+    <div id="app">
+
+        <van-popup
+                v-model="not_mac"
+        >
+            当前系统不是mac系统,程序无法工作
+        </van-popup>
+
+        <section class="notice">
+            <van-notice-bar wrapable :scrollable="false"
+                            v-if="current_song" style="text-align: center">
+                [[current_song.name]] [[current_song.playlist_name]]
+            </van-notice-bar>
+        </section>
+
+        <section class="notice">
+            <van-notice-bar wrapable :scrollable="false"
+                            v-if="!playing" style="text-align: center;background-color: lightskyblue; color: white">
+                播放已停止
+            </van-notice-bar>
+        </section>
+
+        <van-popup
+                v-model="selection_song"
+                position="bottom"
+        >
+            <van-picker
+                    show-toolbar
+                    :columns="play_status"
+                    @confirm="onConfirmSong"
+                    @cancel="onCancelSong"
+            />
+        </van-popup>
+
+
+        <section class="notice">
+            <van-nav-bar
+                    title="remote itunes"
+            />
+        </section>
+
+        <section class="search">
+            <van-search placeholder="搜索(在当前选中的播放列表内)" v-model="search_string"
+                show-action
+                @search="onSearch"
+                @cancel="onCancel"
+                >
+                <div slot="action" @click="onSearch">搜索</div>
+            </van-search>
+        </section>
+
+
+        <van-popup
+                v-model="searching"
+                position="bottom"
+        >
+            <van-picker
+                    show-toolbar
+                    :columns="search_result"
+                    @confirm="onConfirmSearchSong"
+                    @cancel="onCancelSearchSong"
+            />
+        </van-popup>
+
+        <div class="content">
+            <van-panel title="播放开关">
+                <van-row>
+                    <van-col span="8">
+                        <van-button @click="previoustrack" plain hairline size="small" type="info">上一首</van-button>
+                    </van-col>
+                    <van-col span="8">
+                        <van-switch v-model="playing"
+                                    @input="switchstatus">
+                        </van-switch>
+                    </van-col>
+                    <van-col span="8">
+                        <van-button @click="nexttrack" plain hairline size="small" type="info">下一首</van-button>
+                    </van-col>
+                </van-row>
+            </van-panel>
+
+                <section class="slider">
+                    <p>声音调节</p>
+                    <van-slider
+                            @change="onChangeVolume"
+                            v-model="current_data.current_sound"
+                            bar-height="4px"
+                            :min="0"
+                            :max="100"
+                            active-color="lightblue"
+                    />
+                </section>
+
+                <section class="slider">
+                    <p>时间轴 [[ current_data.current_seconds_string ]]</p>
+                    <van-slider
+                            @change="onChangeTime"
+                            v-model="current_data.current_time"
+                            bar-height="4px"
+                            :disabled="current_data.current_total_seconds === 0"
+                            active-color="Moccasin"
+                    />
+                    <div
+                            slot="button"
+                            class="custom-button"
+                    >
+                         [[ current_data.current_time ]]
+                    </div>
+                </section>
+
+            <van-tabs v-model="active_playlist" @click="handleplaylistchange">
+
+                <van-tab v-for="playlist in playlists" :title="playlist.name">
+                    <van-list
+                            finished-text="没有更多了"
+                            v-show="songs"
+                    >
+                        <van-cell
+                                v-for="item in songs"
+                                :key="item.id"
+                                :title="item.name"
+                                center
+                                style="text-align: center"
+                                @click="handleSelection(item)"
+                        />
+                    </van-list>
+                </van-tab>
+
+            </van-tabs>
+
+        </div>
+
+    </div>
+    </body>
+    <!-- import Vue before Element -->
+    <script>
+        let csrftoken = "";
+        let app = new Vue({
+            el: '#app',
+            delimiters: ['[[', ']]'],
+            data: function () {
+                return {
+                        not_mac: true,
+                        searching: false,
+                        search_string: '',
+                        search_result: [],
+
+                        playlists: [],
+                        current_song: null,
+                        active_playlist: 0,
+                        playing: false,
+                        songs: [],
+                        play_status: ["播放"],
+                        current_data: {
+                            current_sound: 100,
+                            current_seconds_string: "00:00",
+                            current_time: 0,
+                            current_total_seconds: 0,
+                            current_seconds: 0
+                        },
+                        selection_song: null
+                    };
+            },
+            mounted: function() {
+                this.not_mac = false;
+                let that = this;
+                $.ajax({
+                    type: 'GET',
+                    url: 'allplaylists-api',
+                    contentType: "application/json",
+                    success: function (data) {
+                        if(data.status === 0) {
+                            that.playlists = data.data;
+                        }
+                    }
+                });
+                $.ajax({
+                    type: 'GET',
+                    url: 'currentstatus-api',
+                    contentType: "application/json",
+                    success: function (data) {
+                        if (data.status === 0) {
+                            that.playing = data.data.playing;
+                            that.current_data = data.data.current_data;
+                            $.ajax({
+                                type: 'GET',
+                                url: 'get-current_song-api',
+                                contentType: "application/json",
+                                success: function (data) {
+                                    if (data.status === 0) {
+                                        that.current_song = data.data;
+                                        that.active_playlist = data.data.playlist_index - 1;
+                                        $.ajax({
+                                            type: 'GET',
+                                            url: '/webadmin/playlists/' + that.active_playlist + "/songs/",
+                                            contentType: "application/json",
+                                            success: function (data) {
+                                                if (data.status === 0) {
+                                                    that.songs = data.data;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+
+                setInterval(function () {
+                        $.ajax({
+                            type: 'GET',
+                            url: 'currentstatus-api',
+                            contentType: "application/json",
+                            success: function (data) {
+                                if (data.status === 0) {
+                                    that.playing = data.data.playing;
+                                    that.current_data = data.data.current_data;
+                                }
+                            }
+                        });
+                }, 1000);
+            },
+            methods: {
+                onConfirmSong(value, index) {
+                    const toast = this.$toast.loading({
+                        duration: 0,       // 持续展示 toast
+                        forbidClick: true, // 禁用背景点击
+                        loadingType: 'spinner',
+                        message: '正在播放 3 秒'
+                    });
+
+                    let second = 3;
+                    const timer = setInterval(() => {
+                        second--;
+                        if (second) {
+                            toast.message = `正在播放 ${second} 秒`;
+                        } else {
+                            clearInterval(timer);
+                            Toast.clear();
+                        }
+                    }, 1000);
+
+                    that = this;
+                    $.ajax({
+                        type: 'POST',
+                        url: 'controlsong-api',
+                        contentType: "application/json",
+                        data: JSON.stringify({"operation": "play", "data": this.selection_song}),
+                        beforeSend: function (xhr, settings) {
+                            csrftoken = $("[name=csrfmiddlewaretoken]").val();
+                            xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                        },
+                        success: function (data) {
+                            that.current_song = that.selection_song;
+                            that.selection_song = null;
+                            that.playing = true;
+                            $.ajax({
+                                type: 'GET',
+                                url: 'get-current_song-api',
+                                contentType: "application/json",
+                                success: function (data) {
+                                    if (data.status === 0) {
+                                        that.current_song = data.data;
+                                        that.active_playlist = data.data.playlist_index - 1;
+                                        $.ajax({
+                                            type: 'GET',
+                                            url: '/webadmin/playlists/' + that.active_playlist + "/songs/",
+                                            contentType: "application/json",
+                                            success: function (data) {
+                                                if (data.status === 0) {
+                                                    that.songs = data.data;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+
+                        }
+                    });
+                },
+                onCancelSong() {
+                    this.selection_song = null;
+                },
+                onChangeVolume(value) {
+                    $.ajax({
+                        type: 'POST',
+                        url: 'controlsong-api',
+                        contentType: "application/json",
+                        data: JSON.stringify({"operation": "set_volume",
+                            "data": {"number": value}}),
+                        beforeSend: function (xhr, settings) {
+                            csrftoken = $("[name=csrfmiddlewaretoken]").val();
+                            xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                        },
+                        success: function (data) {
+                        }
+                    });
+                },
+                onChangeTime(value) {
+                    $.ajax({
+                        type: 'POST',
+                        url: 'controlsong-api',
+                        contentType: "application/json",
+                        data: JSON.stringify({
+                            "operation": "set_time",
+                            "data": {"number": value}
+                        }),
+                        beforeSend: function (xhr, settings) {
+                            csrftoken = $("[name=csrfmiddlewaretoken]").val();
+                            xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                        },
+                        success: function (data) {
+                        }
+                    });
+                },
+                switchstatus(status) {
+                    if(!status) {
+                        data = {"operation": "pause"}
+                    } else {
+                        data = {"operation": "play"}
+                    }
+                    that = this;
+                    $.ajax({
+                        type: 'POST',
+                        url: 'controlsong-api',
+                        contentType: "application/json",
+                        data: JSON.stringify({"operation": "resume", "data": data}),
+                        beforeSend: function (xhr, settings) {
+                            csrftoken = $("[name=csrfmiddlewaretoken]").val();
+                            xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                        },
+                        success: function (data) {
+                            that.playing = status;
+                            $.ajax({
+                                type: 'GET',
+                                url: 'get-current_song-api',
+                                contentType: "application/json",
+                                success: function (data) {
+                                    if (data.status === 0) {
+                                        that.current_song = data.data;
+                                        that.active_playlist = data.data.playlist_index - 1;
+                                        $.ajax({
+                                            type: 'GET',
+                                            url: '/webadmin/playlists/' + that.active_playlist + "/songs/",
+                                            contentType: "application/json",
+                                            success: function (data) {
+                                                if (data.status === 0) {
+                                                    that.songs = data.data;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    });
+                },
+                handleSelection(item) {
+                    this.selection_song = item;
+                },
+                handleplaylistchange(index, title) {
+                    let that = this;
+                    $.ajax({
+                        type: 'GET',
+                        url: '/webadmin/playlists/' + index + "/songs/",
+                        contentType: "application/json",
+                        success: function (data) {
+                            if (data.status === 0) {
+                                that.songs = data.data;
+                            } else {
+                                that.songs = [];
+                            }
+                        }
+                    });
+                },
+                previoustrack() {
+                    $.ajax({
+                        type: 'POST',
+                        url: 'controlsong-api',
+                        contentType: "application/json",
+                        data: JSON.stringify({"operation": "previous_track"}),
+                        beforeSend: function (xhr, settings) {
+                            csrftoken = $("[name=csrfmiddlewaretoken]").val();
+                            xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                        },
+                        success: function (data) {
+                        }});
+                },
+                nexttrack() {
+                    $.ajax({
+                        type: 'POST',
+                        url: 'controlsong-api',
+                        contentType: "application/json",
+                        data: JSON.stringify({"operation": "next_track"}),
+                        beforeSend: function (xhr, settings) {
+                            csrftoken = $("[name=csrfmiddlewaretoken]").val();
+                            xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                        },
+                        success: function (data) {
+                        }
+                    });
+                },
+                onSearch() {
+                    this.search_string = '';
+                    this.search_result = ["abc", "bcd"];
+                    this.searching = true;
+                },
+                onCancel() {
+                    this.search_string = '';
+                    this.search_result = [];
+                    this.searching = false;
+                },
+
+                onConfirmSearchSong(value, index) {
+                    this.searching = false;
+                },
+                onCancelSearchSong(value, index) {
+                    this.searching = false;
+                }
+
+            }
+        })
+    </script>
+</html>
